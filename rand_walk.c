@@ -12,13 +12,12 @@ int main(int argc, char **argv) {
     VSLStreamStatePtr rand_stream;
     vslNewStream(&rand_stream, VSL_BRNG_WH, 777);
     vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, steps, angles, 0.0, 2*M_PI);
-    vslDeleteStream(rand_stream);
-    FILE *fp = fopen("nums.txt", "w+");
+    vslDeleteStream(&rand_stream);
+    double mean = 0;
     for (int i = 0; i < steps; ++i)
-        fprintf(fp, "%f ", angles[i]);
-    fprintf(fp, "\n");
-    fclose(fp);
-    free(angles);
+        mean += angles[i];
+    mean /= steps;
+    printf("%lf\n", mean);
     return 0;
 }
 
