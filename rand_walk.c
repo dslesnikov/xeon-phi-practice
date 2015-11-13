@@ -2,9 +2,8 @@
 #include <stdio.h>
 #include <malloc.h>
 #include <math.h>
-#include "mkl.h"
-#include "mkl_vsl.h"
-#include "omp.h"
+#include <omp.h>
+#include <mkl.h>
 #define M_PI 3.14159265358979323846
 
 
@@ -14,7 +13,7 @@ typedef struct point
     double y;
 } point;
 
-__declspec( target(mic) ) point generate_sample(point start_point, int length);
+__attribute__( (target(mic)) ) point generate_sample(point start_point, int length);
 
 point generate_sample(point start_point, int length) {
     double angles[100];
@@ -49,7 +48,8 @@ double *stats(point *samples, int length) {
     res[2] = samples[0].y;
     res[3] = samples[0].y;
     #pragma offload target(mic) \
-     inout( res : length(4) alloc_if(1) free_if(0) ), in( samples )
+     inout( res : length(4) alloc_if(1) free_if(0) ), \
+     in( samples : length(length) alloc_if(1) free_if(0) )
     {
      #pragma omp parallel for
      for (int i = 0; i < length; ++i) {
