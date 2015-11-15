@@ -13,26 +13,21 @@ typedef struct point
     double y;
 } point;
 
-__attribute__( (target(mic)) ) point generate_sample(point start_point, int length);
 
-point generate_sample(point start_point, int length) {
+__attribute__( (target(mic)) ) point generate_sample(point start_point, int length, int seed) {
     double angles[100];
     double steps[100];
     double res_x = start_point.x;
     double res_y = start_point.y;
     VSLStreamStatePtr rand_stream;
-    vslNewStream(&rand_stream, VSL_BRNG_WH, 777);
+    vslNewStream(&rand_stream, VSL_BRNG_MT2203, seed);
     vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, length, angles, 0.0, 2*M_PI);
     vdRngGaussian(VSL_RNG_METHOD_GAUSSIAN_ICDF, rand_stream, length, steps, 50.0, 7.0);
     vslDeleteStream(&rand_stream);
-    #pragma offload target(mic) \
-     in( steps, angles )
-    {
-     #pragma omp parallel for reduction(+:res_x, res_y)
-     for (int i = 0; i < length; ++i) {
-         res_x += steps[i]*cos(angles[i]);
-         res_y += steps[i]*sin(angles[i]);
-     }
+    #pragma omp parallel for reduction(+:res_x, res_y)
+    for (int i = 0; i < length; ++i) {
+        res_x += steps[i]*cos(angles[i]);
+        res_y += steps[i]*sin(angles[i]);
     }
     point result;
     result.x = res_x;
@@ -48,8 +43,8 @@ double *stats(point *samples, int length) {
     res[2] = samples[0].y;
     res[3] = samples[0].y;
     #pragma offload target(mic) \
-     inout( res : length(4) alloc_if(1) free_if(0) ), \
-     in( samples : length(length) alloc_if(1) free_if(0) )
+     inout( res : length(4) ), \
+     in( samples : length(length) )
     {
      #pragma omp parallel for
      for (int i = 0; i < length; ++i) {
@@ -75,18 +70,18 @@ int main(int argc, char **argv) {
     start.x = 0.0;
     start.y = 0.0;
     #pragma offload target(mic) \
-     out( results : length(num_of_samples) alloc_if(1) free_if(0) )
+     out( results : length(num_of_samples) )
     {
      #pragma omp parallel for
      for (int i = 0; i < num_of_samples; ++i)
-         results[i] = generate_sample(start, steps);
+         results[i] = generate_sample(start, steps, i);
     }
     double *statistics = stats(results, num_of_samples);
     printf("minimal x: %lf\n", statistics[0]);
     printf("maximal x: %lf\n", statistics[1]);
     printf("minimal y: %lf\n", statistics[2]);
     printf("maximal y: %lf\n", statistics[3]);
-    free(results);
     free(statistics);
+    free(results);
     return 0;
 }
