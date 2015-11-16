@@ -50,7 +50,8 @@ int main(int argc, char **argv) {
      for (int i = 0; i < num_of_samples; ++i)
          results[i] = generate_sample(start, steps, i);
     }
-    FILE *fp = fopen("points.txt", "w+");
+    FILE *fp = fopen("points.dat", "w+");
+    fprintf(fp, "X Y\n");
     for (int i = 0; i < num_of_samples; ++i)
         fprintf(fp, "%lf %lf\n", results[i].x, results[i].y);
     fclose(fp);
