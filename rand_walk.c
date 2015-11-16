@@ -36,32 +36,6 @@ __attribute__( (target(mic)) ) point generate_sample(point start_point, int leng
 }
 
 
-double *stats(point *samples, int length) {
-    double *res = (double *)memalign(64, 4 * sizeof(double));
-    res[0] = samples[0].x;
-    res[1] = samples[0].x;
-    res[2] = samples[0].y;
-    res[3] = samples[0].y;
-    #pragma offload target(mic) \
-     inout( res : length(4) ), \
-     in( samples : length(length) )
-    {
-     #pragma omp parallel for
-     for (int i = 0; i < length; ++i) {
-         if (samples[i].x < res[0])
-             res[0] = samples[i].x;
-         if (samples[i].x > res[1])
-             res[1] = samples[i].x;
-         if (samples[i].y < res[2])
-             res[2] = samples[i].y;
-         if (samples[i].y > res[3])
-             res[3] = samples[i].y;
-     }
-    }
-    return res;
-}
-
-
 int main(int argc, char **argv) {
     const int steps = 100;
     const int num_of_samples = 1000000;
@@ -76,12 +50,10 @@ int main(int argc, char **argv) {
      for (int i = 0; i < num_of_samples; ++i)
          results[i] = generate_sample(start, steps, i);
     }
-    double *statistics = stats(results, num_of_samples);
-    printf("minimal x: %lf\n", statistics[0]);
-    printf("maximal x: %lf\n", statistics[1]);
-    printf("minimal y: %lf\n", statistics[2]);
-    printf("maximal y: %lf\n", statistics[3]);
-    free(statistics);
+    FILE *fp = fopen("points.txt", "w+");
+    for (int i = 0; i < num_of_samples; ++i)
+        fprintf(fp, "%lf %lf\n", results[i].x, results[i].y);
+    fclose(fp);
     free(results);
     return 0;
 }
