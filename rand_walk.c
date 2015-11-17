@@ -15,11 +15,11 @@ typedef struct point
 } point;
 
 
-__attribute__( (target(mic)) ) point generate_sample(point start_point, const int length, const int seed) {
+__attribute__( (target(mic)) ) point generate_sample(const int length, const int seed) {
     double angles[length];
     double steps[length];
-    double res_x = start_point.x;
-    double res_y = start_point.y;
+    double res_x = 0;
+    double res_y = 0;
     VSLStreamStatePtr rand_stream;
     vslNewStream(&rand_stream, VSL_BRNG_MT2203, seed*time(0));
     vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, length, angles, 0.0, 2*M_PI);
@@ -37,13 +37,14 @@ __attribute__( (target(mic)) ) point generate_sample(point start_point, const in
 }
 
 
-point *built_full_path(point start_point, const int length, const int seed) {
+point *built_full_path(const int length, const int seed) {
     double angles[length];
     double steps[length];
-    point *path = (point *)memalign(64, (length + 1) * sizeof(point));
+    point *path = (point *)memalign(64, length * sizeof(point));
+    point start_point;
+    start_point.x = 0;
+    start_point.y = 0;
     path[0] = start_point;
-    double res_x = start_point.x;
-    double res_y = start_point.y;
     VSLStreamStatePtr rand_stream;
     vslNewStream(&rand_stream, VSL_BRNG_MT2203, seed*time(0));
     vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, length, angles, 0.0, 2*M_PI);
@@ -59,14 +60,14 @@ point *built_full_path(point start_point, const int length, const int seed) {
 }
 
 
-point *generate_whole_data(point start_point, const int num_of_samples, const int steps) {
+point *generate_whole_data(const int num_of_samples, const int steps) {
     point *results = (point *)memalign(64, num_of_samples * sizeof(point));
     #pragma offload target(mic) \
      out( results : length(num_of_samples) )
     {
      #pragma omp parallel for
      for (int i = 0; i < num_of_samples; ++i)
-         results[i] = generate_sample(start_point, steps, i);
+         results[i] = generate_sample(steps, i);
     }
     return results;
 }
@@ -81,23 +82,24 @@ void write_points_data(point *points, const int length) {
 }
 
 
-point **generate_paths_data(point start_point, const int num_of_full_paths, const int length_of_path) {
+point **generate_paths_data(const int num_of_full_paths, const int length_of_path) {
     point **paths = (point **)memalign(64, num_of_full_paths * sizeof(point *));
     for (int i = 0; i < num_of_full_paths; ++i)
-        paths[i] = built_full_path(start_point, length_of_path, i);
+        paths[i] = built_full_path(length_of_path, i);
     return paths;
 }
 
 
-void write_paths_data(point **paths, const int num_of_paths, const int length_of_sample) {
+void write_paths_data(point **paths, const int num_of_paths, const int length_of_path) {
     FILE *fp_paths = fopen("paths.dat", "w");
     for (int i = 0; i < num_of_paths; ++i) {
-        for (int j = 0; j < length_of_sample; ++j)
+        for (int j = 0; j < length_of_path; ++j)
             fprintf(fp_paths, "%lf %lf\n", paths[i][j].x, paths[i][j].y);
         fprintf(fp_paths, "========\n");
     }
     fclose(fp_paths);
 }
+
 
 int main(int argc, char **argv) {
     const int steps = 100;
@@ -106,10 +108,10 @@ int main(int argc, char **argv) {
     point start;
     start.x = 0.0;
     start.y = 0.0;
-    point *set_of_points = generate_whole_data(start, num_of_samples, steps);
+    point *set_of_points = generate_whole_data(num_of_samples, steps);
     write_points_data(set_of_points, num_of_samples);
-    point **set_of_paths = generate_paths_data(start, num_of_full_paths, steps);
-    write_paths_data(set_of_paths, num_of_full_paths, steps);
+    point **set_of_paths = generate_paths_data(num_of_full_paths, steps+1);
+    write_paths_data(set_of_paths, num_of_full_paths, steps+1);
     free(set_of_points);
     for (int i = 0; i < num_of_full_paths; ++i)
         free(set_of_paths[i]);
