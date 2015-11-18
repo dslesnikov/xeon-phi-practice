@@ -38,8 +38,8 @@ __attribute__( (target(mic)) ) point generate_sample(const int length, const int
 
 
 point *built_full_path(const int length, const int seed) {
-    double angles[length];
-    double steps[length];
+    double angles[length-1];
+    double steps[length-1];
     point *path = (point *)memalign(64, length * sizeof(point));
     point start_point;
     start_point.x = 0;
@@ -47,10 +47,10 @@ point *built_full_path(const int length, const int seed) {
     path[0] = start_point;
     VSLStreamStatePtr rand_stream;
     vslNewStream(&rand_stream, VSL_BRNG_MT2203, seed*time(0));
-    vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, length, angles, 0.0, 2*M_PI);
-    vdRngGaussian(VSL_RNG_METHOD_GAUSSIAN_ICDF, rand_stream, length, steps, 10.0, 3);
+    vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, length-1, angles, 0.0, 2*M_PI);
+    vdRngGaussian(VSL_RNG_METHOD_GAUSSIAN_ICDF, rand_stream, length-1, steps, 10.0, 3);
     vslDeleteStream(&rand_stream);
-    for (int i = 1; i < length+1; ++i) {
+    for (int i = 1; i < length; ++i) {
         point new_point;
         new_point.x = path[i-1].x + steps[i-1]*cos(angles[i-1]);
         new_point.y = path[i-1].y + steps[i-1]*sin(angles[i-1]);
@@ -65,9 +65,9 @@ point *generate_whole_data(const int num_of_samples, const int steps) {
     #pragma offload target(mic) \
      out( results : length(num_of_samples) )
     {
-     #pragma omp parallel for
-     for (int i = 0; i < num_of_samples; ++i)
-         results[i] = generate_sample(steps, i);
+        #pragma omp parallel for schedule(static)
+        for (int i = 0; i < num_of_samples; ++i)
+            results[i] = generate_sample(steps, i);
     }
     return results;
 }
@@ -84,6 +84,7 @@ void write_points_data(point *points, const int length) {
 
 point **generate_paths_data(const int num_of_full_paths, const int length_of_path) {
     point **paths = (point **)memalign(64, num_of_full_paths * sizeof(point *));
+    #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_of_full_paths; ++i)
         paths[i] = built_full_path(length_of_path, i);
     return paths;
@@ -105,9 +106,6 @@ int main(int argc, char **argv) {
     const int steps = 100;
     const int num_of_samples = 1000000;
     const int num_of_full_paths = 4;
-    point start;
-    start.x = 0.0;
-    start.y = 0.0;
     point *set_of_points = generate_whole_data(num_of_samples, steps);
     write_points_data(set_of_points, num_of_samples);
     point **set_of_paths = generate_paths_data(num_of_full_paths, steps+1);
