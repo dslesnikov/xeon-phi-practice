@@ -25,7 +25,6 @@ __attribute__( (target(mic)) ) point generate_sample(const int length, const int
     vdRngUniform(VSL_RNG_METHOD_UNIFORM_STD, rand_stream, length, angles, 0.0, 2*M_PI);
     vdRngGaussian(VSL_RNG_METHOD_GAUSSIAN_ICDF, rand_stream, length, steps, 10.0, 3);
     vslDeleteStream(&rand_stream);
-    #pragma omp parallel for reduction(+:res_x, res_y)
     for (int i = 0; i < length; ++i) {
         res_x += steps[i]*cos(angles[i]);
         res_y += steps[i]*sin(angles[i]);
@@ -60,16 +59,10 @@ point *built_full_path(const int length, const int seed) {
 }
 
 
-point *generate_whole_data(const int num_of_samples, const int steps) {
-    point *results = (point *)memalign(64, num_of_samples * sizeof(point));
-    #pragma offload target(mic) \
-     out( results : length(num_of_samples) )
-    {
-        #pragma omp parallel for schedule(static)
-        for (int i = 0; i < num_of_samples; ++i)
-            results[i] = generate_sample(steps, i);
-    }
-    return results;
+__attribute__( (target(mic)) ) void generate_whole_data(point *results, const int num_of_samples, const int length_of_sample) {
+    #pragma omp parallel for schedule(static)
+    for (int i = 0; i < num_of_samples; ++i)
+        results[i] = generate_sample(length_of_sample, i);
 }
 
 
@@ -84,7 +77,6 @@ void write_points_data(point *points, const int length) {
 
 point **generate_paths_data(const int num_of_full_paths, const int length_of_path) {
     point **paths = (point **)memalign(64, num_of_full_paths * sizeof(point *));
-    #pragma omp parallel for schedule(static)
     for (int i = 0; i < num_of_full_paths; ++i)
         paths[i] = built_full_path(length_of_path, i);
     return paths;
@@ -106,10 +98,14 @@ int main(int argc, char **argv) {
     const int steps = 100;
     const int num_of_samples = 1000000;
     const int num_of_full_paths = 4;
-    point *set_of_points = generate_whole_data(num_of_samples, steps);
-    write_points_data(set_of_points, num_of_samples);
+    int signal_value = 123;
+    point *set_of_points = (point *)memalign(64, num_of_samples * sizeof(point));
+    #pragma offload target(mic:0) signal(signal_value) out( set_of_points : length(num_of_samples) )
+    generate_whole_data(set_of_points, num_of_samples, steps);
     point **set_of_paths = generate_paths_data(num_of_full_paths, steps+1);
     write_paths_data(set_of_paths, num_of_full_paths, steps+1);
+    #pragma offload_wait target(mic:0) wait(signal_value)
+    write_points_data(set_of_points, num_of_samples);
     free(set_of_points);
     for (int i = 0; i < num_of_full_paths; ++i)
         free(set_of_paths[i]);
